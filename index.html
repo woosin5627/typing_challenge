@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>개발자 타자 연습기 - 바닐라 JS</title>
+    <style>
+        /* ==================================== */
+        /* CSS: 스타일링 */
+        /* ==================================== */
+        body {
+            background-color: #1f2937; /* Gray-800 */
+            color: #e5e7eb; /* Gray-200 */
+            /* Fira Code는 개발자 폰트 느낌을 주기 위해 추가 (설치 안되어 있으면 기본 모노스페이스) */
+            font-family: 'Fira Code', 'D2Coding', monospace; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .container {
+            width: 90%;
+            max-width: 800px;
+            background-color: #111827; /* Gray-900 */
+            border: 1px solid #374151; /* Gray-700 */
+            border-radius: 8px;
+            padding: 24px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        h1 {
+            color: #34d399; /* Emerald-400 */
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+        }
+        
+        /* 통계 영역 */
+        .stats {
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 1px solid #374151;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+            font-size: 0.9rem;
+        }
+        .stats strong {
+            font-size: 1.5rem;
+        }
+
+        /* 코드 표시 영역 (핵심) */
+        .editor-container {
+            display: flex;
+            cursor: text;
+            white-space: pre-wrap; /* 엔터와 공백을 그대로 표시 */
+            line-height: 1.5;
+            min-height: 200px;
+            position: relative;
+            outline: none; 
+            overflow: auto; /* 내용이 길어지면 스크롤 가능하게 */
+            padding: 10px 0;
+        }
+        .line-numbers {
+            color: #4b5563; 
+            padding-right: 15px;
+            text-align: right;
+            user-select: none;
+        }
+        .code-display {
+            flex-grow: 1;
+            /* width를 지정하지 않고 flex-grow를 사용하여 공간 확보 */
+        }
+
+        /* 문자별 상태 */
+        .char-untyped {
+            color: #4b5563; /* 미입력 */
+        }
+        .char-correct {
+            color: #e5e7eb; /* 정확 */
+        }
+        .char-wrong {
+            color: #f87171; /* 오타 */
+            background-color: rgba(248, 113, 113, 0.15);
+        }
+
+        /* 커서 애니메이션 */
+        .cursor {
+            border-right: 2px solid #10b981; /* Emerald-500 */
+            animation: blink 1s step-end infinite;
+            background-color: rgba(55, 65, 81, 0.5); 
+        }
+
+        @keyframes blink {
+            from, to { border-color: transparent }
+            50% { border-color: #10b981 }
+        }
+        .finished-message {
+            color: #34d399;
+            font-weight: bold;
+            text-align: center;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>JavaScript Bubble Sort Challenge</h1>
+        
+        <div id="stats" class="stats">
+            <span>WPM: <strong id="wpm">0</strong></span>
+            <span>Accuracy: <strong id="accuracy">100%</strong></span>
+            <span>Time: <strong id="time">0s</strong></span>
+        </div>
+
+        <div id="editor-container" class="editor-container" tabindex="0">
+            <div id="line-numbers" class="line-numbers"></div>
+            <div id="code-display" class="code-display"></div>
+        </div>
+
+        <p class="mt-4 text-sm text-gray-500">
+            <span id="instruction"></span>
+        </p>
+    </div>
+    
+    <script>
+        // ====================================================================
+        // JavaScript 로직
+        // ====================================================================
+        
+        // 1. 상태 및 상수 정의
+        const PROBLEM = {
+            code: 'function bubbleSort(arr) {\n  for (let i = 0; i < arr.length; i++) {\n    for (let j = 0; j < arr.length - i - 1; j++) {\n      if (arr[j] > arr[j + 1]) {\n        // Swap\n        [arr[j], arr[j + 1]] = [arr[j + 1], arr[j]];\n      }\n    }\n  }\n  return arr;\n}',
+            tabWidth: 2 
+        };
+
+        let userInput = '';
+        let cursorIndex = 0;
+        let startTime = null;
+        let isFinished = false;
+        let totalTimeInterval = null;
+
+        // DOM 요소 캐싱
+        const editorContainer = document.getElementById('editor-container');
+        const codeDisplay = document.getElementById('code-display');
+        const lineNumbers = document.getElementById('line-numbers');
+        const wpmEl = document.getElementById('wpm');
+        const timeEl = document.getElementById('time');
+        const accuracyEl = document.getElementById('accuracy');
+        const instructionEl = document.getElementById('instruction');
+
+        // 2. 렌더링 함수
+        function renderCode() {
+            let html = '';
+            
+            for (let i = 0; i < PROBLEM.code.length; i++) {
+                const char = PROBLEM.code[i];
+                const userChar = userInput[i];
+                let statusClass = 'char-untyped';
+
+                if (i < userInput.length) {
+                    if (userChar === char) {
+                        statusClass = 'char-correct';
+                    } else {
+                        statusClass = 'char-wrong';
+                    }
+                }
+
+                let charToDisplay = char;
+
+                const isCursor = i === cursorIndex && !isFinished;
+                const cursorClass = isCursor ? 'cursor' : '';
+
+                html += `<span class="${statusClass} ${cursorClass}">${charToDisplay}</span>`;
+            }
+
+            codeDisplay.innerHTML = html;
+            
+            // 줄 번호 렌더링
+            lineNumbers.innerHTML = PROBLEM.code.split('\n').map((_, i) => `<div>${i + 1}</div>`).join('');
+            
+            // 마지막 글자 입력 후 커서 위치 처리
+            if (cursorIndex === PROBLEM.code.length && !isFinished) {
+                 codeDisplay.innerHTML += `<span class="cursor"> </span>`;
+            }
+
+             // 커서 위치로 스크롤 이동 (선택적 기능)
+             if (cursorIndex < PROBLEM.code.length) {
+                const cursorElement = codeDisplay.querySelector('.cursor');
+                if (cursorElement) {
+                    cursorElement.scrollIntoView({ 
+                        behavior: 'smooth', 
+                        block: 'nearest' 
+                    });
+                }
+            }
+        }
+
+        // 3. 통계 업데이트 함수
+        function calculateStats() {
+            if (!startTime) return;
+
+            const durationSeconds = (Date.now() - startTime) / 1000;
+            
+            let correctChars = 0;
+            for(let i = 0; i < userInput.length; i++) {
+                if (userInput[i] === PROBLEM.code[i]) {
+                    correctChars++;
+                }
+            }
+            
+            const grossChars = userInput.length;
+            
+            const wpm = Math.floor((correctChars / 5) / (durationSeconds / 60) || 0);
+            const accuracy = grossChars > 0 ? ((correctChars / grossChars) * 100).toFixed(1) : '100.0';
+
+            wpmEl.textContent = wpm.toString();
+            accuracyEl.textContent = `${accuracy}%`;
+            timeEl.textContent = `${Math.floor(durationSeconds)}s`;
+        }
+
+        // 4. 이벤트 핸들러 및 로직
+        function handleKeyDown(e) {
+            e.preventDefault(); 
+
+            if (isFinished) return;
+
+            if (startTime === null) {
+                startTime = Date.now();
+                totalTimeInterval = setInterval(calculateStats, 1000); 
+            }
+
+            // A. 입력 및 삭제 처리
+            if (e.key.length === 1 && e.key !== 'Dead') { 
+                userInput += e.key;
+                cursorIndex++;
+            } else if (e.key === 'Backspace') {
+                if (userInput.length > 0) {
+                    userInput = userInput.slice(0, -1);
+                    cursorIndex--;
+                }
+            } 
+            
+            // B. 자동 들여쓰기 로직 (Enter)
+            else if (e.key === 'Enter') {
+                let nextIndent = '';
+                const lines = userInput.split('\n');
+                const lastLine = lines[lines.length - 1] || '';
+
+                const baseIndentMatch = lastLine.match(/^(\s*)/);
+                const baseIndent = baseIndentMatch ? baseIndentMatch[0] : '';
+                nextIndent = baseIndent;
+
+                const trimmedLastLine = lastLine.trim();
+                const isBlockStart = trimmedLastLine.endsWith('{') || trimmedLastLine.endsWith(':');
+
+                if (isBlockStart) {
+                    nextIndent += ' '.repeat(PROBLEM.tabWidth);
+                }
+                
+                userInput += '\n' + nextIndent;
+                cursorIndex += (1 + nextIndent.length); 
+            } 
+            
+            // C. Tab 키 처리
+            else if (e.key === 'Tab') {
+                const spaces = ' '.repeat(PROBLEM.tabWidth);
+                userInput += spaces;
+                cursorIndex += PROBLEM.tabWidth;
+            }
+
+            // D. 완료 체크
+            if (cursorIndex >= PROBLEM.code.length && !isFinished) {
+                isFinished = true;
+                clearInterval(totalTimeInterval);
+                calculateStats();
+                instructionEl.innerHTML = '<span class="finished-message">🎉 완료! WPM과 정확도를 확인하세요.</span>';
+            }
+            
+            renderCode();
+        }
+
+        // 초기화 및 포커스 설정
+        function init() {
+            renderCode();
+            editorContainer.focus();
+            instructionEl.textContent = '키보드를 누르면 타이머가 시작됩니다. (Tab, Enter도 작동합니다.)';
+            
+            editorContainer.addEventListener('keydown', handleKeyDown);
+        }
+
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
